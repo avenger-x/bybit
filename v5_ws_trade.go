@@ -20,17 +20,18 @@ type V5WebsocketTradeServiceI interface {
 	Run() error
 	Ping() error
 	Close() error
-
-	CreateOrder(orders []*V5CreateOrderParam) error
-	CancelOrder(orders []*V5CancelOrderParam) error
+	Subscribe(func(resp *V5WebsocketTradeResponse)) error
+	CreateOrder(reqId string, orders []*V5CreateOrderParam) error
+	CancelOrder(reqId string, orders []*V5CancelOrderParam) error
 }
 
 // V5WebsocketTradeService :
 type V5WebsocketTradeService struct {
 	client     *WebSocketClient
 	connection *websocket.Conn
-
-	mu sync.Mutex
+	mu         sync.Mutex
+	ch         chan *V5WebsocketTradeResponse
+	chMu       sync.Mutex
 }
 
 const (
@@ -43,8 +44,16 @@ type V5WebsocketTradeTopic string
 
 const (
 	// V5WebsocketTradeTopicPong :
-	V5WebsocketTradeTopicPong V5WebsocketTradeTopic = "pong"
+	V5WebsocketTradeTopicPong        V5WebsocketTradeTopic = "pong"
+	V5WebsocketTradeTopicOrderCreate                       = "order.create"
 )
+
+type V5WebsocketTradeResponse struct {
+	ReqId   string                        `json:"reqId"`
+	RetCode int                           `json:"retCode"`
+	Op      string                        `json:"op"`
+	Data    []V5WebsocketPrivateOrderData `json:"data"`
+}
 
 // judgeTopic :
 func (s *V5WebsocketTradeService) judgeTopic(respBody []byte) (V5WebsocketTradeTopic, error) {
@@ -52,8 +61,13 @@ func (s *V5WebsocketTradeService) judgeTopic(respBody []byte) (V5WebsocketTradeT
 	if err := json.Unmarshal(respBody, &parsedData); err != nil {
 		return "", err
 	}
-	if retMsg, ok := parsedData["op"].(string); ok && retMsg == "pong" {
-		return V5WebsocketTradeTopicPong, nil
+	if retMsg, ok := parsedData["op"].(string); ok {
+		switch retMsg {
+		case "pong":
+			return V5WebsocketTradeTopicPong, nil
+		case "order.create":
+			return V5WebsocketTradeTopicOrderCreate, nil
+		}
 	}
 
 	if authStatus, ok := parsedData["success"].(bool); ok {
@@ -129,6 +143,30 @@ func (s *V5WebsocketTradeService) Start(ctx context.Context, errHandler ErrHandl
 		}
 	}
 }
+func (s *V5WebsocketTradeService) Subscribe(f func(resp *V5WebsocketTradeResponse)) error {
+	s.chMu.Lock()
+	ch := s.ch
+	s.chMu.Unlock()
+	if ch != nil {
+		return fmt.Errorf("s.ch != nil")
+	}
+	ch = make(chan *V5WebsocketTradeResponse)
+	s.chMu.Lock()
+	s.ch = ch
+	s.chMu.Unlock()
+	for {
+		select {
+		case resp := <-ch:
+			go f(resp)
+		}
+	}
+}
+
+func (s *V5WebsocketTradeService) UnSubscribe() {
+	s.chMu.Lock()
+	defer s.chMu.Unlock()
+	s.ch = nil
+}
 
 // Run :
 func (s *V5WebsocketTradeService) Run() error {
@@ -145,6 +183,20 @@ func (s *V5WebsocketTradeService) Run() error {
 	case V5WebsocketTradeTopicPong:
 		if err := s.connection.PongHandler()("pong"); err != nil {
 			return fmt.Errorf("pong: %w", err)
+		}
+	case V5WebsocketTradeTopicOrderCreate:
+		res := &V5WebsocketTradeResponse{}
+		err = json.Unmarshal(message, res)
+		if err != nil {
+			return fmt.Errorf("json.Unmarshal err: %w", err)
+		}
+		s.chMu.Lock()
+		ch := s.ch
+		s.chMu.Unlock()
+		if ch != nil {
+			go func() {
+				ch <- res
+			}()
 		}
 	}
 	return nil

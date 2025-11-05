@@ -5,12 +5,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
 // CreateOrder :
-func (s *V5WebsocketTradeService) CreateOrder(orders []*V5CreateOrderParam) error {
+func (s *V5WebsocketTradeService) CreateOrder(reqId string, orders []*V5CreateOrderParam) error {
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	headers := make(map[string]string)
 	headers["X-BAPI-TIMESTAMP"] = timestamp
@@ -22,7 +21,7 @@ func (s *V5WebsocketTradeService) CreateOrder(orders []*V5CreateOrderParam) erro
 		Op      string                `json:"op"`
 		Args    []*V5CreateOrderParam `json:"args"`
 	}{
-		ReqId:   uuid.New().String(),
+		ReqId:   reqId,
 		Headers: headers,
 		Op:      "order.create",
 		Args:    orders,
@@ -38,7 +37,7 @@ func (s *V5WebsocketTradeService) CreateOrder(orders []*V5CreateOrderParam) erro
 	return nil
 }
 
-func (s *V5WebsocketTradeService) CancelOrder(orders []*V5CancelOrderParam) error {
+func (s *V5WebsocketTradeService) CancelOrder(reqId string, orders []*V5CancelOrderParam) error {
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	headers := make(map[string]string)
 	headers["X-BAPI-TIMESTAMP"] = timestamp
@@ -50,7 +49,7 @@ func (s *V5WebsocketTradeService) CancelOrder(orders []*V5CancelOrderParam) erro
 		Op      string                `json:"op"`
 		Args    []*V5CancelOrderParam `json:"args"`
 	}{
-		ReqId:   uuid.New().String(),
+		ReqId:   reqId,
 		Headers: headers,
 		Op:      "order.cancel",
 		Args:    orders,
