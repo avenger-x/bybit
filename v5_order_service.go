@@ -21,52 +21,11 @@ type V5OrderServiceI interface {
 type V5OrderService struct {
 	client *Client
 }
-
-// V5CreateBatchOrderParam :
-type V5CreateBatchOrderParam struct {
-	Category CategoryV5 `json:"category"`
-	Request  struct {
-		Symbol                SymbolV5               `json:"symbol"`
-		Side                  Side                   `json:"side"`
-		OrderType             OrderType              `json:"orderType"`
-		Qty                   string                 `json:"qty"`
-		IsLeverage            *IsLeverage            `json:"isLeverage,omitempty"`
-		Price                 *string                `json:"price,omitempty"`
-		TriggerDirection      *TriggerDirection      `json:"triggerDirection,omitempty"`
-		OrderFilter           *OrderFilter           `json:"orderFilter,omitempty"` // If not passed, Order by default
-		TriggerPrice          *string                `json:"triggerPrice,omitempty"`
-		TriggerBy             *TriggerBy             `json:"triggerBy,omitempty"`
-		OrderIv               *string                `json:"orderIv,omitempty"`     // option only.
-		TimeInForce           *TimeInForce           `json:"timeInForce,omitempty"` // If not passed, GTC is used by default
-		PositionIdx           *PositionIdx           `json:"positionIdx,omitempty"` // Under hedge-mode, this param is required
-		OrderLinkID           *string                `json:"orderLinkId,omitempty"`
-		TakeProfit            *string                `json:"takeProfit,omitempty"`
-		StopLoss              *string                `json:"stopLoss,omitempty"`
-		TpTriggerBy           *TriggerBy             `json:"tpTriggerBy,omitempty"`
-		SlTriggerBy           *TriggerBy             `json:"slTriggerBy,omitempty"`
-		ReduceOnly            *bool                  `json:"reduce_only,omitempty"`
-		CloseOnTrigger        *bool                  `json:"closeOnTrigger,omitempty"`
-		SmpType               *string                `json:"smpType,omitempty"`
-		MarketMakerProtection *bool                  `json:"mmp,omitempty"` // option only
-		TpSlMode              *TpSlMode              `json:"tpslMode,omitempty"`
-		TpLimitPrice          *string                `json:"tpLimitPrice,omitempty"`
-		SlLimitPrice          *string                `json:"slLimitPrice,omitempty"`
-		TpOrderType           *OrderType             `json:"tpOrderType,omitempty"`
-		SlOrderType           *OrderType             `json:"slOrderType,omitempty"`
-		MarketUnit            *MarketUnit            `json:"marketUnit,omitempty"`            // The unit for qty when create Spot market orders for UTA account.
-		SlippageToleranceType *SlippageToleranceType `json:"slippageToleranceType,omitempty"` // Slippage tolerance type for market order, TickSize or Percent
-		SlippageTolerance     *string                `json:"slippageTolerance,omitempty"`     // Slippage tolerance value
-	} `json:"request"`
-}
-
-// V5CreateOrderParam :
-type V5CreateOrderParam struct {
-	Category  CategoryV5 `json:"category"`
-	Symbol    SymbolV5   `json:"symbol"`
-	Side      Side       `json:"side"`
-	OrderType OrderType  `json:"orderType"`
-	Qty       string     `json:"qty"`
-
+type V5OrderRequest struct {
+	Symbol                SymbolV5               `json:"symbol"`
+	Side                  Side                   `json:"side"`
+	OrderType             OrderType              `json:"orderType"`
+	Qty                   string                 `json:"qty"`
 	IsLeverage            *IsLeverage            `json:"isLeverage,omitempty"`
 	Price                 *string                `json:"price,omitempty"`
 	TriggerDirection      *TriggerDirection      `json:"triggerDirection,omitempty"`
@@ -93,6 +52,18 @@ type V5CreateOrderParam struct {
 	MarketUnit            *MarketUnit            `json:"marketUnit,omitempty"`            // The unit for qty when create Spot market orders for UTA account.
 	SlippageToleranceType *SlippageToleranceType `json:"slippageToleranceType,omitempty"` // Slippage tolerance type for market order, TickSize or Percent
 	SlippageTolerance     *string                `json:"slippageTolerance,omitempty"`     // Slippage tolerance value
+}
+
+// V5CreateBatchOrderParam :
+type V5CreateBatchOrderParam struct {
+	Category CategoryV5     `json:"category"`
+	Request  V5OrderRequest `json:"request"`
+}
+
+// V5CreateOrderParam :
+type V5CreateOrderParam struct {
+	Category CategoryV5 `json:"category"`
+	V5OrderRequest
 }
 
 // V5CreateOrderResponse :
