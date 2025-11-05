@@ -20,7 +20,7 @@ type V5WebsocketTradeServiceI interface {
 	Run() error
 	Ping() error
 	Close() error
-	Subscribe(func(resp *V5WebsocketTradeCreateOrderResponse)) error
+	Subscribe(func(resp *V5WebsocketTradeCreateOrderBatchResponse)) error
 	CreateOrder(reqId string, orders []*V5CreateOrderParam) error
 	CancelOrder(reqId string, orders []*V5CancelOrderParam) error
 }
@@ -30,7 +30,7 @@ type V5WebsocketTradeService struct {
 	client     *WebSocketClient
 	connection *websocket.Conn
 	mu         sync.Mutex
-	ch         chan *V5WebsocketTradeCreateOrderResponse
+	ch         chan *V5WebsocketTradeCreateOrderBatchResponse
 	chMu       sync.Mutex
 }
 
@@ -44,16 +44,17 @@ type V5WebsocketTradeTopic string
 
 const (
 	// V5WebsocketTradeTopicPong :
-	V5WebsocketTradeTopicPong        V5WebsocketTradeTopic = "pong"
-	V5WebsocketTradeTopicOrderCreate                       = "order.create"
+	V5WebsocketTradeTopicPong             V5WebsocketTradeTopic = "pong"
+	V5WebsocketTradeTopicOrderCreateBatch                       = "order.create-batch"
 )
 
-type V5WebsocketTradeCreateOrderResponse struct {
-	ReqId   string                 `json:"reqId"`
-	RetCode int                    `json:"retCode"`
-	RetMsg  string                 `json:"retMsg"`
-	Op      string                 `json:"op"`
-	Data    map[string]interface{} `json:"data"`
+type V5WebsocketTradeCreateOrderBatchResponse struct {
+	ReqId      string                 `json:"reqId"`
+	RetCode    int                    `json:"retCode"`
+	RetMsg     string                 `json:"retMsg"`
+	Op         string                 `json:"op"`
+	Data       []*V5CreateOrderResult `json:"data"`
+	RetExtInfo interface{}            `json:"retExtInfo"`
 }
 
 // judgeTopic :
@@ -66,8 +67,8 @@ func (s *V5WebsocketTradeService) judgeTopic(respBody []byte) (V5WebsocketTradeT
 		switch retMsg {
 		case "pong":
 			return V5WebsocketTradeTopicPong, nil
-		case "order.create":
-			return V5WebsocketTradeTopicOrderCreate, nil
+		case "order.create-batch":
+			return V5WebsocketTradeTopicOrderCreateBatch, nil
 		}
 	}
 
@@ -144,14 +145,14 @@ func (s *V5WebsocketTradeService) Start(ctx context.Context, errHandler ErrHandl
 		}
 	}
 }
-func (s *V5WebsocketTradeService) Subscribe(f func(resp *V5WebsocketTradeCreateOrderResponse)) error {
+func (s *V5WebsocketTradeService) Subscribe(f func(resp *V5WebsocketTradeCreateOrderBatchResponse)) error {
 	s.chMu.Lock()
 	ch := s.ch
 	s.chMu.Unlock()
 	if ch != nil {
 		return fmt.Errorf("s.ch != nil")
 	}
-	ch = make(chan *V5WebsocketTradeCreateOrderResponse)
+	ch = make(chan *V5WebsocketTradeCreateOrderBatchResponse)
 	s.chMu.Lock()
 	s.ch = ch
 	s.chMu.Unlock()
@@ -185,8 +186,8 @@ func (s *V5WebsocketTradeService) Run() error {
 		if err := s.connection.PongHandler()("pong"); err != nil {
 			return fmt.Errorf("pong: %w", err)
 		}
-	case V5WebsocketTradeTopicOrderCreate:
-		res := &V5WebsocketTradeCreateOrderResponse{}
+	case V5WebsocketTradeTopicOrderCreateBatch:
+		res := &V5WebsocketTradeCreateOrderBatchResponse{}
 		err = json.Unmarshal(message, res)
 		if err != nil {
 			return fmt.Errorf("json.Unmarshal err: %w", err)

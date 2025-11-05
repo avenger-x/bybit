@@ -9,12 +9,11 @@ import (
 )
 
 // CreateOrder :
-func (s *V5WebsocketTradeService) CreateOrder(reqId string, orders []*V5CreateOrderParam) error {
+func (s *V5WebsocketTradeService) CreateBatchOrder(reqId string, orders []*V5CreateOrderParam) error {
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	headers := make(map[string]string)
 	headers["X-BAPI-TIMESTAMP"] = timestamp
 	headers["X-BAPI-RECV-WINDOW"] = "8000"
-
 	param := struct {
 		ReqId   string                `json:"reqId"`
 		Headers map[string]string     `json:"header"`
@@ -23,7 +22,7 @@ func (s *V5WebsocketTradeService) CreateOrder(reqId string, orders []*V5CreateOr
 	}{
 		ReqId:   reqId,
 		Headers: headers,
-		Op:      "order.create",
+		Op:      "order.create-batch",
 		Args:    orders,
 	}
 	buf, err := json.Marshal(param)
