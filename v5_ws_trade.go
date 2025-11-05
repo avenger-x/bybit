@@ -21,7 +21,7 @@ type V5WebsocketTradeServiceI interface {
 	Ping() error
 	Close() error
 	Subscribe(func(resp *V5WebsocketTradeCreateOrderBatchResponse)) error
-	CreateOrder(reqId string, orders []*V5CreateOrderParam) error
+	CreateBatchOrder(reqId string, orders []*V5CreateOrderParam) error
 	CancelOrder(reqId string, orders []*V5CancelOrderParam) error
 }
 
