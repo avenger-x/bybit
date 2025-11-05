@@ -20,8 +20,8 @@ type V5WebsocketTradeServiceI interface {
 	Run() error
 	Ping() error
 	Close() error
-	Subscribe(func(resp *V5WebsocketTradeCreateOrderBatchResponse)) error
-	CreateBatchOrder(reqId string, orders []*V5CreateOrderParam) error
+	Subscribe(func(resp *V5WebsocketTradeCreateBatchOrderResponse)) error
+	CreateBatchOrder(reqId string, orders []*V5CreateBatchOrderParam) error
 	CancelOrder(reqId string, orders []*V5CancelOrderParam) error
 }
 
@@ -30,7 +30,7 @@ type V5WebsocketTradeService struct {
 	client     *WebSocketClient
 	connection *websocket.Conn
 	mu         sync.Mutex
-	ch         chan *V5WebsocketTradeCreateOrderBatchResponse
+	ch         chan *V5WebsocketTradeCreateBatchOrderResponse
 	chMu       sync.Mutex
 }
 
@@ -48,7 +48,7 @@ const (
 	V5WebsocketTradeTopicOrderCreateBatch                       = "order.create-batch"
 )
 
-type V5WebsocketTradeCreateOrderBatchResponse struct {
+type V5WebsocketTradeCreateBatchOrderResponse struct {
 	ReqId      string                 `json:"reqId"`
 	RetCode    int                    `json:"retCode"`
 	RetMsg     string                 `json:"retMsg"`
@@ -145,14 +145,14 @@ func (s *V5WebsocketTradeService) Start(ctx context.Context, errHandler ErrHandl
 		}
 	}
 }
-func (s *V5WebsocketTradeService) Subscribe(f func(resp *V5WebsocketTradeCreateOrderBatchResponse)) error {
+func (s *V5WebsocketTradeService) Subscribe(f func(resp *V5WebsocketTradeCreateBatchOrderResponse)) error {
 	s.chMu.Lock()
 	ch := s.ch
 	s.chMu.Unlock()
 	if ch != nil {
 		return fmt.Errorf("s.ch != nil")
 	}
-	ch = make(chan *V5WebsocketTradeCreateOrderBatchResponse)
+	ch = make(chan *V5WebsocketTradeCreateBatchOrderResponse)
 	s.chMu.Lock()
 	s.ch = ch
 	s.chMu.Unlock()
@@ -187,7 +187,7 @@ func (s *V5WebsocketTradeService) Run() error {
 			return fmt.Errorf("pong: %w", err)
 		}
 	case V5WebsocketTradeTopicOrderCreateBatch:
-		res := &V5WebsocketTradeCreateOrderBatchResponse{}
+		res := &V5WebsocketTradeCreateBatchOrderResponse{}
 		err = json.Unmarshal(message, res)
 		if err != nil {
 			return fmt.Errorf("json.Unmarshal err: %w", err)

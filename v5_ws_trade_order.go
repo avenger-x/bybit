@@ -9,16 +9,16 @@ import (
 )
 
 // CreateOrder :
-func (s *V5WebsocketTradeService) CreateBatchOrder(reqId string, orders []*V5CreateOrderParam) error {
+func (s *V5WebsocketTradeService) CreateBatchOrder(reqId string, orders []*V5CreateBatchOrderParam) error {
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	headers := make(map[string]string)
 	headers["X-BAPI-TIMESTAMP"] = timestamp
 	headers["X-BAPI-RECV-WINDOW"] = "8000"
 	param := struct {
-		ReqId   string                `json:"reqId"`
-		Headers map[string]string     `json:"header"`
-		Op      string                `json:"op"`
-		Args    []*V5CreateOrderParam `json:"args"`
+		ReqId   string                     `json:"reqId"`
+		Headers map[string]string          `json:"header"`
+		Op      string                     `json:"op"`
+		Args    []*V5CreateBatchOrderParam `json:"args"`
 	}{
 		ReqId:   reqId,
 		Headers: headers,
