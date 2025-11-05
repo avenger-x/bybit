@@ -20,7 +20,7 @@ type V5WebsocketTradeServiceI interface {
 	Run() error
 	Ping() error
 	Close() error
-	Subscribe(func(resp *V5WebsocketTradeResponse)) error
+	Subscribe(func(resp *V5WebsocketTradeOrderResponse)) error
 	CreateOrder(reqId string, orders []*V5CreateOrderParam) error
 	CancelOrder(reqId string, orders []*V5CancelOrderParam) error
 }
@@ -30,7 +30,7 @@ type V5WebsocketTradeService struct {
 	client     *WebSocketClient
 	connection *websocket.Conn
 	mu         sync.Mutex
-	ch         chan *V5WebsocketTradeResponse
+	ch         chan *V5WebsocketTradeOrderResponse
 	chMu       sync.Mutex
 }
 
@@ -48,9 +48,10 @@ const (
 	V5WebsocketTradeTopicOrderCreate                       = "order.create"
 )
 
-type V5WebsocketTradeResponse struct {
+type V5WebsocketTradeOrderResponse struct {
 	ReqId   string                        `json:"reqId"`
 	RetCode int                           `json:"retCode"`
+	RetMsg  string                        `json:"retMsg"`
 	Op      string                        `json:"op"`
 	Data    []V5WebsocketPrivateOrderData `json:"data"`
 }
@@ -143,14 +144,14 @@ func (s *V5WebsocketTradeService) Start(ctx context.Context, errHandler ErrHandl
 		}
 	}
 }
-func (s *V5WebsocketTradeService) Subscribe(f func(resp *V5WebsocketTradeResponse)) error {
+func (s *V5WebsocketTradeService) Subscribe(f func(resp *V5WebsocketTradeOrderResponse)) error {
 	s.chMu.Lock()
 	ch := s.ch
 	s.chMu.Unlock()
 	if ch != nil {
 		return fmt.Errorf("s.ch != nil")
 	}
-	ch = make(chan *V5WebsocketTradeResponse)
+	ch = make(chan *V5WebsocketTradeOrderResponse)
 	s.chMu.Lock()
 	s.ch = ch
 	s.chMu.Unlock()
@@ -185,7 +186,7 @@ func (s *V5WebsocketTradeService) Run() error {
 			return fmt.Errorf("pong: %w", err)
 		}
 	case V5WebsocketTradeTopicOrderCreate:
-		res := &V5WebsocketTradeResponse{}
+		res := &V5WebsocketTradeOrderResponse{}
 		err = json.Unmarshal(message, res)
 		if err != nil {
 			return fmt.Errorf("json.Unmarshal err: %w", err)
