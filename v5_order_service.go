@@ -56,8 +56,8 @@ type V5OrderRequest struct {
 
 // V5CreateBatchOrderParam :
 type V5CreateBatchOrderParam struct {
-	Category CategoryV5     `json:"category"`
-	Request  V5OrderRequest `json:"request"`
+	Category CategoryV5        `json:"category"`
+	Request  []*V5OrderRequest `json:"request"`
 }
 
 // V5CreateOrderParam :
