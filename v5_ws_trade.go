@@ -49,11 +49,11 @@ const (
 )
 
 type V5WebsocketTradeOrderResponse struct {
-	ReqId   string                        `json:"reqId"`
-	RetCode int                           `json:"retCode"`
-	RetMsg  string                        `json:"retMsg"`
-	Op      string                        `json:"op"`
-	Data    []V5WebsocketPrivateOrderData `json:"data"`
+	ReqId   string                 `json:"reqId"`
+	RetCode int                    `json:"retCode"`
+	RetMsg  string                 `json:"retMsg"`
+	Op      string                 `json:"op"`
+	Data    map[string]interface{} `json:"data"`
 }
 
 // judgeTopic :
