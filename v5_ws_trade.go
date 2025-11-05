@@ -56,7 +56,12 @@ type V5WebsocketTradeCreateBatchOrderResponse struct {
 	Data    struct {
 		List []*V5CreateOrderResult `json:"list"`
 	} `json:"data"`
-	RetExtInfo interface{} `json:"retExtInfo"`
+	RetExtInfo struct {
+		List []struct {
+			Code int    `json:"code"`
+			Msg  string `json:"msg"`
+		}
+	} `json:"retExtInfo"`
 }
 
 // judgeTopic :
