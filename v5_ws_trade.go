@@ -49,12 +49,14 @@ const (
 )
 
 type V5WebsocketTradeCreateBatchOrderResponse struct {
-	ReqId      string                 `json:"reqId"`
-	RetCode    int                    `json:"retCode"`
-	RetMsg     string                 `json:"retMsg"`
-	Op         string                 `json:"op"`
-	Data       []*V5CreateOrderResult `json:"data"`
-	RetExtInfo interface{}            `json:"retExtInfo"`
+	ReqId   string `json:"reqId"`
+	RetCode int    `json:"retCode"`
+	RetMsg  string `json:"retMsg"`
+	Op      string `json:"op"`
+	Data    struct {
+		List []*V5CreateOrderResult `json:"list"`
+	} `json:"data"`
+	RetExtInfo interface{} `json:"retExtInfo"`
 }
 
 // judgeTopic :
