@@ -2,6 +2,7 @@ package bybit
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/hmac"
 	"crypto/rand"
@@ -362,6 +363,10 @@ func getSignatureForBody(src map[string]interface{}, key string) string {
 }
 
 func (c *Client) getPublicly(path string, query url.Values, dst interface{}) error {
+	return c.getPubliclyWithContext(context.Background(), path, query, dst)
+}
+
+func (c *Client) getPubliclyWithContext(ctx context.Context, path string, query url.Values, dst interface{}) error {
 	u, err := url.Parse(c.baseURL)
 	if err != nil {
 		return err
@@ -369,7 +374,7 @@ func (c *Client) getPublicly(path string, query url.Values, dst interface{}) err
 	u.Path = path
 	u.RawQuery = query.Encode()
 
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return err
 	}

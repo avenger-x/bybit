@@ -1,9 +1,12 @@
 package bybit
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/hirokisan/bybit/v2/testhelper"
 	"github.com/stretchr/testify/assert"
@@ -588,6 +591,245 @@ func TestV5Market_GetTickers(t *testing.T) {
 		require.NotNil(t, resp)
 		testhelper.Compare(t, respBody["result"], resp.Result.Spot)
 	})
+}
+
+func TestV5Market_WithContext(t *testing.T) {
+	endpoints := []struct {
+		name string
+		path string
+		body string
+		call func(V5MarketServiceI, context.Context, SymbolV5) (interface{}, error)
+	}{
+		{
+			name: "orderbook",
+			path: "/v5/market/orderbook",
+			body: `{"retCode":0,"result":{"s":"BTCUSDT","b":[["16638.2700","0.30574900"]],"a":[["16638.6400","0.00847900"]]}}`,
+			call: func(s V5MarketServiceI, ctx context.Context, symbol SymbolV5) (interface{}, error) {
+				limit := 25
+				return s.GetOrderbookWithContext(ctx, V5GetOrderbookParam{Category: CategoryV5Spot, Symbol: symbol, Limit: &limit})
+			},
+		},
+		{
+			name: "tickers",
+			path: "/v5/market/tickers",
+			body: `{"retCode":0,"result":{"category":"spot","list":[{"symbol":"BTCUSDT","lastPrice":"16638.2700","bid1Price":"16638.2700","bid1Size":"0.30574900","ask1Price":"16638.6400","ask1Size":"0.00847900"}]}}`,
+			call: func(s V5MarketServiceI, ctx context.Context, symbol SymbolV5) (interface{}, error) {
+				return s.GetTickersWithContext(ctx, V5GetTickersParam{Category: CategoryV5Spot, Symbol: &symbol})
+			},
+		},
+	}
+
+	for _, endpoint := range endpoints {
+		t.Run(endpoint.name, func(t *testing.T) {
+			t.Run("success", func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, http.MethodGet, r.Method)
+					assert.Equal(t, endpoint.path, r.URL.Path)
+					assert.Equal(t, "spot", r.URL.Query().Get("category"))
+					assert.Equal(t, "BTCUSDT", r.URL.Query().Get("symbol"))
+					if endpoint.name == "orderbook" {
+						assert.Equal(t, "25", r.URL.Query().Get("limit"))
+					}
+					_, _ = w.Write([]byte(endpoint.body))
+				}))
+				defer server.Close()
+				market := NewClient().WithBaseURL(server.URL).V5().Market()
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				resp, err := endpoint.call(market, ctx, SymbolV5BTCUSDT)
+				require.NoError(t, err)
+				switch resp := resp.(type) {
+				case *V5GetOrderbookResponse:
+					assert.Equal(t, SymbolV5BTCUSDT, resp.Result.Symbol)
+					require.Len(t, resp.Result.Bids, 1)
+					require.Len(t, resp.Result.Asks, 1)
+					assert.Equal(t, V5GetOrderbookBidAsk{Price: "16638.2700", Quantity: "0.30574900"}, resp.Result.Bids[0])
+					assert.Equal(t, V5GetOrderbookBidAsk{Price: "16638.6400", Quantity: "0.00847900"}, resp.Result.Asks[0])
+				case *V5GetTickersResponse:
+					require.NotNil(t, resp.Result.Spot)
+					require.Len(t, resp.Result.Spot.List, 1)
+					item := resp.Result.Spot.List[0]
+					assert.Equal(t, SymbolV5BTCUSDT, item.Symbol)
+					assert.Equal(t, "16638.2700", item.LastPrice)
+					assert.Equal(t, "16638.2700", item.Bid1Price)
+					assert.Equal(t, "0.30574900", item.Bid1Size)
+					assert.Equal(t, "16638.6400", item.Ask1Price)
+					assert.Equal(t, "0.00847900", item.Ask1Size)
+				}
+			})
+
+			t.Run("already canceled", func(t *testing.T) {
+				hit := make(chan struct{}, 1)
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					hit <- struct{}{}
+					_, _ = w.Write([]byte(endpoint.body))
+				}))
+				defer server.Close()
+				market := NewClient().WithBaseURL(server.URL).V5().Market()
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+
+				resp, err := endpoint.call(market, ctx, SymbolV5BTCUSDT)
+				assert.ErrorIs(t, err, context.Canceled)
+				assert.Nil(t, resp)
+				assert.Empty(t, hit, "a canceled request must not reach the server")
+			})
+
+			for _, phase := range []string{"waiting for headers", "reading body"} {
+				for _, mode := range []string{"cancel", "deadline"} {
+					t.Run(mode+" while "+phase, func(t *testing.T) {
+						guard, stop := context.WithTimeout(context.Background(), 5*time.Second)
+						defer stop()
+						started := make(chan struct{})
+						canceled := make(chan struct{})
+						server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+							if phase == "reading body" {
+								_, _ = w.Write([]byte(`{"retCode":0,"result":`))
+								w.(http.Flusher).Flush()
+							}
+							close(started)
+							select {
+							case <-r.Context().Done():
+								close(canceled)
+							case <-guard.Done():
+							}
+						}))
+						defer server.Close()
+						market := NewClient().WithBaseURL(server.URL).V5().Market()
+						var ctx context.Context
+						var cancel context.CancelFunc
+						wantErr := context.Canceled
+						if mode == "deadline" {
+							ctx, cancel = context.WithTimeout(guard, 250*time.Millisecond)
+							wantErr = context.DeadlineExceeded
+						} else {
+							ctx, cancel = context.WithCancel(guard)
+						}
+						defer cancel()
+						done := make(chan error, 1)
+						go func() {
+							_, err := endpoint.call(market, ctx, SymbolV5BTCUSDT)
+							done <- err
+						}()
+						select {
+						case <-started:
+						case <-guard.Done():
+							t.Fatal("request did not reach the server")
+						}
+						if mode == "cancel" {
+							cancel()
+						}
+						select {
+						case err := <-done:
+							assert.ErrorIs(t, err, wantErr)
+						case <-guard.Done():
+							t.Fatal("request did not finish")
+						}
+						select {
+						case <-canceled:
+						case <-guard.Done():
+							t.Fatal("HTTP request was not canceled")
+						}
+					})
+				}
+			}
+
+			t.Run("concurrent context isolation", func(t *testing.T) {
+				guard, stop := context.WithTimeout(context.Background(), 5*time.Second)
+				defer stop()
+				started := make(chan string, 2)
+				release := make(chan struct{})
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					started <- r.URL.Query().Get("symbol")
+					select {
+					case <-r.Context().Done():
+						return
+					case <-guard.Done():
+						return
+					case <-release:
+						_, _ = w.Write([]byte(endpoint.body))
+					}
+				}))
+				defer server.Close()
+				market := NewClient().WithBaseURL(server.URL).V5().Market()
+				ctx, cancel := context.WithCancel(guard)
+				defer cancel()
+				canceledDone := make(chan error, 1)
+				healthyDone := make(chan error, 1)
+				go func() {
+					_, err := endpoint.call(market, ctx, SymbolV5BTCUSDT)
+					canceledDone <- err
+				}()
+				go func() {
+					_, err := endpoint.call(market, guard, SymbolV5("ETHUSDT"))
+					healthyDone <- err
+				}()
+				for i := 0; i < 2; i++ {
+					select {
+					case <-started:
+					case <-guard.Done():
+						t.Fatal("concurrent requests did not reach the server")
+					}
+				}
+				cancel()
+				select {
+				case err := <-canceledDone:
+					assert.ErrorIs(t, err, context.Canceled)
+				case <-guard.Done():
+					t.Fatal("canceled request did not finish")
+				}
+				select {
+				case err := <-healthyDone:
+					t.Fatalf("independent request finished before its response was released: %v", err)
+				default:
+				}
+				close(release)
+				select {
+				case err := <-healthyDone:
+					require.NoError(t, err)
+				case <-guard.Done():
+					t.Fatal("independent request did not finish")
+				}
+			})
+
+			t.Run("API error", func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					_, _ = w.Write([]byte(`{"retCode":10001,"retMsg":"invalid parameter"}`))
+				}))
+				defer server.Close()
+				market := NewClient().WithBaseURL(server.URL).V5().Market()
+				resp, err := endpoint.call(market, context.Background(), SymbolV5BTCUSDT)
+				var apiErr *ErrorResponse
+				require.ErrorAs(t, err, &apiErr)
+				assert.Equal(t, 10001, apiErr.RetCode)
+				assert.Equal(t, "invalid parameter", apiErr.RetMsg)
+				assert.Nil(t, resp)
+			})
+		})
+	}
+}
+
+func TestV5Market_GetTickersWithContextValidation(t *testing.T) {
+	coin := CoinBTC
+	expDate := "25DEC22"
+	for _, tc := range []struct {
+		param V5GetTickersParam
+		err   string
+	}{
+		{V5GetTickersParam{Category: CategoryV5Option}, "validate param: symbol or baseCoin must be passed for option"},
+		{V5GetTickersParam{Category: CategoryV5Spot, BaseCoin: &coin}, "validate param: baseCoin is for option only"},
+		{V5GetTickersParam{Category: CategoryV5Spot, ExpDate: &expDate}, "validate param: expDate is for option only"},
+	} {
+		t.Run(tc.err, func(t *testing.T) {
+			// Validation must still take precedence over request cancellation.
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			resp, err := NewClient().V5().Market().GetTickersWithContext(ctx, tc.param)
+			assert.EqualError(t, err, tc.err)
+			assert.Nil(t, resp)
+		})
+	}
 }
 
 func TestV5Market_GetFundingRateHistory(t *testing.T) {

@@ -1,6 +1,7 @@
 package bybit
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +17,9 @@ type V5MarketServiceI interface {
 	GetPremiumIndexPriceKline(V5GetPremiumIndexPriceKlineParam) (*V5GetPremiumIndexPriceKlineResponse, error)
 	GetInstrumentsInfo(V5GetInstrumentsInfoParam) (*V5GetInstrumentsInfoResponse, error)
 	GetOrderbook(V5GetOrderbookParam) (*V5GetOrderbookResponse, error)
+	GetOrderbookWithContext(context.Context, V5GetOrderbookParam) (*V5GetOrderbookResponse, error)
 	GetTickers(V5GetTickersParam) (*V5GetTickersResponse, error)
+	GetTickersWithContext(context.Context, V5GetTickersParam) (*V5GetTickersResponse, error)
 	GetFundingRateHistory(V5GetFundingRateHistoryParam) (*V5GetFundingRateHistoryResponse, error)
 	GetPublicTradingHistory(V5GetPublicTradingHistoryParam) (*V5GetPublicTradingHistoryResponse, error)
 	GetOpenInterest(V5GetOpenInterestParam) (*V5GetOpenInterestResponse, error)
@@ -573,6 +576,11 @@ type V5GetOrderbookBidAsk struct {
 
 // GetOrderbook :
 func (s *V5MarketService) GetOrderbook(param V5GetOrderbookParam) (*V5GetOrderbookResponse, error) {
+	return s.GetOrderbookWithContext(context.Background(), param)
+}
+
+// GetOrderbookWithContext retrieves the orderbook using ctx for the HTTP request.
+func (s *V5MarketService) GetOrderbookWithContext(ctx context.Context, param V5GetOrderbookParam) (*V5GetOrderbookResponse, error) {
 	var res V5GetOrderbookResponse
 
 	queryString, err := query.Values(param)
@@ -580,7 +588,7 @@ func (s *V5MarketService) GetOrderbook(param V5GetOrderbookParam) (*V5GetOrderbo
 		return nil, err
 	}
 
-	if err := s.client.getPublicly("/v5/market/orderbook", queryString, &res); err != nil {
+	if err := s.client.getPubliclyWithContext(ctx, "/v5/market/orderbook", queryString, &res); err != nil {
 		return nil, err
 	}
 
@@ -740,6 +748,11 @@ type V5GetTickersSpotItem struct {
 
 // GetTickers :
 func (s *V5MarketService) GetTickers(param V5GetTickersParam) (*V5GetTickersResponse, error) {
+	return s.GetTickersWithContext(context.Background(), param)
+}
+
+// GetTickersWithContext retrieves tickers using ctx for the HTTP request.
+func (s *V5MarketService) GetTickersWithContext(ctx context.Context, param V5GetTickersParam) (*V5GetTickersResponse, error) {
 	var res V5GetTickersResponse
 
 	if err := param.validate(); err != nil {
@@ -751,7 +764,7 @@ func (s *V5MarketService) GetTickers(param V5GetTickersParam) (*V5GetTickersResp
 		return nil, err
 	}
 
-	if err := s.client.getPublicly("/v5/market/tickers", queryString, &res); err != nil {
+	if err := s.client.getPubliclyWithContext(ctx, "/v5/market/tickers", queryString, &res); err != nil {
 		return nil, err
 	}
 
