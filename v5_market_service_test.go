@@ -3,6 +3,7 @@ package bybit
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -56,7 +57,85 @@ func TestV5MarketGetKline(t *testing.T) {
 
 	require.NotNil(t, resp)
 	assert.Equal(t, respBody["result"].(map[string]interface{})["symbol"], string(resp.Result.Symbol))
-	assert.Equal(t, respBody["result"].(map[string]interface{})["list"].([][]string)[0][0], resp.Result.List[0].StartTime)
+	require.Len(t, resp.Result.List, 1)
+	assert.Equal(t, V5GetKlineItem{
+		StartTime: "1713744000000", Open: "38515.14", High: "51400", Low: "29496.53",
+		Close: "43890.18", Volume: "202399.805532", Turnover: "8017306629.63402469",
+	}, resp.Result.List[0])
+}
+
+func TestV5GetKlineListUnmarshalJSON(t *testing.T) {
+	row := []interface{}{"1713744000000", "38515.14", "51400", "29496.53", "43890.18", "202399.805532", "8017306629.63402469"}
+	valid, err := json.Marshal([]interface{}{row})
+	require.NoError(t, err)
+	want := V5GetKlineList{{
+		StartTime: "1713744000000", Open: "38515.14", High: "51400", Low: "29496.53",
+		Close: "43890.18", Volume: "202399.805532", Turnover: "8017306629.63402469",
+	}}
+
+	t.Run("repeated decoding replaces data", func(t *testing.T) {
+		var result V5GetKlineResponse
+		body := []byte(`{"result":{"list":` + string(valid) + `}}`)
+		for i := 0; i < 2; i++ {
+			require.NoError(t, json.Unmarshal(body, &result))
+			assert.Equal(t, want, result.Result.List)
+		}
+		require.NoError(t, json.Unmarshal([]byte(`{"result":{"list":[["2","3","4","5","6","7","8"]]}}`), &result))
+		assert.Equal(t, V5GetKlineList{{StartTime: "2", Open: "3", High: "4", Low: "5", Close: "6", Volume: "7", Turnover: "8"}}, result.Result.List)
+	})
+
+	for _, empty := range []string{"[]", "null"} {
+		t.Run("clear with "+empty, func(t *testing.T) {
+			var list V5GetKlineList
+			require.NoError(t, json.Unmarshal(valid, &list))
+			require.NoError(t, json.Unmarshal([]byte(empty), &list))
+			assert.Empty(t, list)
+		})
+	}
+
+	invalid := []struct {
+		name string
+		data string
+	}{
+		{"empty row", `[[]]`},
+		{"short row", `[["1","2","3","4","5","6"]]`},
+		{"long row", `[["1","2","3","4","5","6","7","8"]]`},
+		{"null row", `[null]`},
+		{"object row", `[{}]`},
+		{"string row", `["row"]`},
+		{"number row", `[1]`},
+		{"boolean row", `[true]`},
+		{"object list", `{}`},
+		{"string list", `"list"`},
+		{"number list", `1`},
+		{"boolean list", `true`},
+		{"invalid JSON", `[`},
+	}
+	for field := range row {
+		for _, value := range []interface{}{1.25, nil, true, map[string]interface{}{}, []interface{}{}} {
+			badRow := append([]interface{}(nil), row...)
+			badRow[field] = value
+			// Include a valid first row to catch partial updates on error.
+			body, err := json.Marshal([]interface{}{row, badRow})
+			require.NoError(t, err)
+			invalid = append(invalid, struct {
+				name string
+				data string
+			}{fmt.Sprintf("field %d type %T", field, value), string(body)})
+		}
+	}
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			var list V5GetKlineList
+			require.NoError(t, json.Unmarshal(valid, &list))
+			var decodeErr error
+			require.NotPanics(t, func() {
+				decodeErr = json.Unmarshal([]byte(tc.data), &list)
+			})
+			require.Error(t, decodeErr)
+			assert.Equal(t, want, list, "failed decoding must not change the previous value")
+		})
+	}
 }
 
 func TestV5Market_GetMarkPriceKline(t *testing.T) {
@@ -601,6 +680,18 @@ func TestV5Market_WithContext(t *testing.T) {
 		call func(V5MarketServiceI, context.Context, SymbolV5) (interface{}, error)
 	}{
 		{
+			name: "kline",
+			path: "/v5/market/kline",
+			body: `{"retCode":0,"result":{"category":"spot","symbol":"BTCUSDT","list":[["1713744000000","38515.140000000000000001","51400.000000000000000002","29496.530000000000000003","43890.180000000000000004","9007199254740993.000000000000000005","8017306629.634024690000000006"]]}}`,
+			call: func(s V5MarketServiceI, ctx context.Context, symbol SymbolV5) (interface{}, error) {
+				start, end, limit := int64(1713744000000), int64(1713830400000), 25
+				return s.GetKlineWithContext(ctx, V5GetKlineParam{
+					Category: CategoryV5Spot, Symbol: symbol, Interval: IntervalD,
+					Start: &start, End: &end, Limit: &limit,
+				})
+			},
+		},
+		{
 			name: "orderbook",
 			path: "/v5/market/orderbook",
 			body: `{"retCode":0,"result":{"s":"BTCUSDT","b":[["16638.2700","0.30574900"]],"a":[["16638.6400","0.00847900"]]}}`,
@@ -627,8 +718,13 @@ func TestV5Market_WithContext(t *testing.T) {
 					assert.Equal(t, endpoint.path, r.URL.Path)
 					assert.Equal(t, "spot", r.URL.Query().Get("category"))
 					assert.Equal(t, "BTCUSDT", r.URL.Query().Get("symbol"))
-					if endpoint.name == "orderbook" {
+					if endpoint.name == "orderbook" || endpoint.name == "kline" {
 						assert.Equal(t, "25", r.URL.Query().Get("limit"))
+					}
+					if endpoint.name == "kline" {
+						assert.Equal(t, "D", r.URL.Query().Get("interval"))
+						assert.Equal(t, "1713744000000", r.URL.Query().Get("start"))
+						assert.Equal(t, "1713830400000", r.URL.Query().Get("end"))
 					}
 					_, _ = w.Write([]byte(endpoint.body))
 				}))
@@ -640,6 +736,19 @@ func TestV5Market_WithContext(t *testing.T) {
 				resp, err := endpoint.call(market, ctx, SymbolV5BTCUSDT)
 				require.NoError(t, err)
 				switch resp := resp.(type) {
+				case *V5GetKlineResponse:
+					assert.Equal(t, CategoryV5Spot, resp.Result.Category)
+					assert.Equal(t, SymbolV5BTCUSDT, resp.Result.Symbol)
+					require.Len(t, resp.Result.List, 1)
+					assert.Equal(t, V5GetKlineItem{
+						StartTime: "1713744000000",
+						Open:      "38515.140000000000000001",
+						High:      "51400.000000000000000002",
+						Low:       "29496.530000000000000003",
+						Close:     "43890.180000000000000004",
+						Volume:    "9007199254740993.000000000000000005",
+						Turnover:  "8017306629.634024690000000006",
+					}, resp.Result.List[0])
 				case *V5GetOrderbookResponse:
 					assert.Equal(t, SymbolV5BTCUSDT, resp.Result.Symbol)
 					require.Len(t, resp.Result.Bids, 1)

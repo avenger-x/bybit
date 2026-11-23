@@ -12,6 +12,7 @@ import (
 // V5MarketServiceI :
 type V5MarketServiceI interface {
 	GetKline(V5GetKlineParam) (*V5GetKlineResponse, error)
+	GetKlineWithContext(context.Context, V5GetKlineParam) (*V5GetKlineResponse, error)
 	GetMarkPriceKline(V5GetMarkPriceKlineParam) (*V5GetMarkPriceKlineResponse, error)
 	GetIndexPriceKline(V5GetIndexPriceKlineParam) (*V5GetIndexPriceKlineResponse, error)
 	GetPremiumIndexPriceKline(V5GetPremiumIndexPriceKlineParam) (*V5GetPremiumIndexPriceKlineResponse, error)
@@ -77,25 +78,40 @@ func (l *V5GetKlineList) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &parsedData); err != nil {
 		return err
 	}
-	for _, d := range parsedData {
+	items := make(V5GetKlineList, 0, len(parsedData))
+	for rowIndex, d := range parsedData {
 		if len(d) != 7 {
 			return errors.New("so far len(items) must be 7, please check it on documents")
 		}
-		*l = append(*l, V5GetKlineItem{
-			StartTime: d[0].(string),
-			Open:      d[1].(string),
-			High:      d[2].(string),
-			Low:       d[3].(string),
-			Close:     d[4].(string),
-			Volume:    d[5].(string),
-			Turnover:  d[6].(string),
+		var fields [7]string
+		for fieldIndex, field := range d {
+			value, ok := field.(string)
+			if !ok {
+				return fmt.Errorf("kline row %d field %d: expected string, got %T", rowIndex, fieldIndex, field)
+			}
+			fields[fieldIndex] = value
+		}
+		items = append(items, V5GetKlineItem{
+			StartTime: fields[0],
+			Open:      fields[1],
+			High:      fields[2],
+			Low:       fields[3],
+			Close:     fields[4],
+			Volume:    fields[5],
+			Turnover:  fields[6],
 		})
 	}
+	*l = items
 	return nil
 }
 
 // GetKline :
 func (s *V5MarketService) GetKline(param V5GetKlineParam) (*V5GetKlineResponse, error) {
+	return s.GetKlineWithContext(context.Background(), param)
+}
+
+// GetKlineWithContext retrieves klines using ctx for the HTTP request.
+func (s *V5MarketService) GetKlineWithContext(ctx context.Context, param V5GetKlineParam) (*V5GetKlineResponse, error) {
 	var res V5GetKlineResponse
 
 	queryString, err := query.Values(param)
@@ -103,7 +119,7 @@ func (s *V5MarketService) GetKline(param V5GetKlineParam) (*V5GetKlineResponse, 
 		return nil, err
 	}
 
-	if err := s.client.getPublicly("/v5/market/kline", queryString, &res); err != nil {
+	if err := s.client.getPubliclyWithContext(ctx, "/v5/market/kline", queryString, &res); err != nil {
 		return nil, err
 	}
 
